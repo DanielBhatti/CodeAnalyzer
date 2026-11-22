@@ -1,0 +1,99 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:CodeAnalyzer.UI" xmlns:analysis="using:CodeAnalyzer" x:Class="CodeAnalyzer.UI.MainWindow"
+        Title="Code Analyzer" Width="1440" Height="940" MinWidth="1000" MinHeight="700">
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20" RowSpacing="12">
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+      <StackPanel>
+        <TextBlock Text="Code Analyzer" FontSize="26" FontWeight="SemiBold" />
+        <TextBlock Text="Explore structure, coupling, and complexity" Classes="caption" />
+      </StackPanel>
+      <Button x:Name="OpenButton" Grid.Column="1" Content="Open solution…" VerticalAlignment="Center" />
+      <Button x:Name="CancelButton" Grid.Column="2" Content="Cancel" IsEnabled="False" VerticalAlignment="Center" />
+    </Grid>
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <TextBox x:Name="PathBox" PlaceholderText="Path to a .slnx, .sln, or project" />
+      <Button x:Name="AnalyzeButton" Grid.Column="1" Content="Analyze" />
+    </Grid>
+    <Grid Grid.Row="2" ColumnDefinitions="280,12,*" ColumnSpacing="0">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+        <TextBlock Text="SCOPE" Classes="caption" />
+        <ComboBox x:Name="ProjectFilter" Grid.Row="1" HorizontalAlignment="Stretch" />
+        <CheckBox x:Name="TestsFilter" Grid.Row="2" Content="Include test projects" IsChecked="False" />
+        <TextBox x:Name="SearchBox" Grid.Row="3" PlaceholderText="Filter classes and methods…" />
+        <Grid Grid.Row="4" RowDefinitions="Auto,*" RowSpacing="8">
+          <TextBlock x:Name="TypesLabel" Text="Classes / types" Classes="caption" />
+          <ListBox x:Name="TypeList" Grid.Row="1">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="analysis:TypeInfo">
+                <StackPanel Margin="0,5">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding FullName}" FontSize="11" Classes="caption" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Grid>
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch" />
+      <Grid Grid.Column="2" RowDefinitions="*,10,230">
+        <TabControl x:Name="Views">
+          <TabItem Header="Project dependencies">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+              <DockPanel>
+                <Button x:Name="FitProjects" Content="Fit graph" DockPanel.Dock="Right" />
+                <TextBlock Text="Arrows: project → referenced project · select a node for details" Classes="caption" VerticalAlignment="Center" />
+              </DockPanel>
+              <local:GraphView x:Name="ProjectGraph" Grid.Row="1" />
+            </Grid>
+          </TabItem>
+          <TabItem Header="Class dependencies">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+              <DockPanel>
+                <Button x:Name="FitTypes" Content="Fit graph" DockPanel.Dock="Right" />
+                <TextBlock x:Name="ClassGraphLabel" Text="Select a class to explore its direct dependencies and dependents" Classes="caption" TextWrapping="Wrap" />
+              </DockPanel>
+              <local:GraphView x:Name="TypeGraph" Grid.Row="1" />
+            </Grid>
+          </TabItem>
+          <TabItem Header="Method complexity">
+            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="Minimum complexity" Classes="caption" VerticalAlignment="Center" />
+                <NumericUpDown x:Name="MinimumComplexity" Minimum="1" Maximum="10000" Value="1" Width="110" />
+                <TextBlock x:Name="MethodCount" Classes="caption" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Grid.Row="1" Text="Bars show decision count. Gold > 10, red > 20 are review cues, not quality grades." Classes="caption" TextWrapping="Wrap" />
+              <ListBox x:Name="MethodList" Grid.Row="2">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="local:MethodRow">
+                    <Grid ColumnDefinitions="60,*,130" Margin="0,6" ColumnSpacing="12">
+                      <TextBlock Text="{Binding Complexity}" FontSize="24" FontWeight="SemiBold" />
+                      <StackPanel Grid.Column="1">
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Location}" FontSize="11" Classes="caption" />
+                        <Border Width="{Binding BarWidth}" Background="{Binding BarBrush}" Height="4" HorizontalAlignment="Left" Margin="0,5,0,0" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="2" Text="{Binding SizeLabel}" Classes="caption" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
+          </TabItem>
+          <TabItem Header="Analysis notes">
+            <TextBox x:Name="WarningsBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                     Text="Open a solution to begin. Analysis uses the Debug configuration. Restore the target solution first." />
+          </TabItem>
+        </TabControl>
+        <GridSplitter Grid.Row="1" ResizeDirection="Rows" HorizontalAlignment="Stretch" />
+        <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="8">
+          <TextBlock x:Name="DetailTitle" Text="Selection details and source preview" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBox x:Name="SourceBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas"
+                   FontSize="12" TextWrapping="NoWrap" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   Text="Mouse wheel: zoom · drag background: pan · drag nodes: rearrange · double-click a class node: explore its neighborhood" />
+        </Grid>
+      </Grid>
+    </Grid>
+    <TextBlock x:Name="StatusText" Grid.Row="3" Text="Ready" Classes="caption" TextWrapping="Wrap" />
+  </Grid>
+</Window>

@@ -1,0 +1,10 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CodeAnalyzer.UI.App" RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Button"><Setter Property="Padding" Value="14,8" /></Style>
+    <Style Selector="TextBox"><Setter Property="MinHeight" Value="36" /></Style>
+    <Style Selector="TextBlock.caption"><Setter Property="Foreground" Value="#9FACBF" /></Style>
+  </Application.Styles>
+</Application>

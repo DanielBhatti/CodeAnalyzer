@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="CodeAnalyzer.Test/CodeAnalyzer.Test.csproj" />
+  <Project Path="CodeAnalyzer.UI/CodeAnalyzer.UI.csproj" />
+  <Project Path="CodeAnalyzer/CodeAnalyzer.csproj" />
+</Solution>
