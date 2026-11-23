@@ -10,6 +10,65 @@ namespace CodeAnalyzer.Test;
 public sealed class UiTests
 {
     [AvaloniaTest]
+    public void FitKeepsFarApartNodesInsideTheViewport()
+    {
+        var layout = new FixedGraphLayout(new Dictionary<string, Point> { ["a"] = new(0, 0), ["b"] = new(20000, 0) });
+        var graph = new GraphView(layout);
+        var window = new Window { Width = 900, Height = 600, Content = graph };
+        try
+        {
+            window.Show();
+            graph.SetGraph([new("a", "A", ""), new("b", "B", "")], [new("a", "b", "uses")]);
+            graph.Fit();
+            var selected = "";
+            graph.NodeSelected += id => selected = id;
+            var scale = (graph.Bounds.Width - 60) / (20000 + layout.NodeSize.Width);
+            var target = new Point(30 + (20000 + layout.NodeSize.Width / 2) * scale,
+                30 + layout.NodeSize.Height / 2 * scale);
+
+            window.MouseDown(target, Avalonia.Input.MouseButton.Left);
+            window.MouseUp(target, Avalonia.Input.MouseButton.Left);
+
+            Assert.That(selected, Is.EqualTo("b"), "Fit must include the distant node even when the required scale is below 0.08.");
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaTest]
+    public void UsesInjectedLayoutForFittingAndHitTesting()
+    {
+        var layout = new FixedGraphLayout();
+        var graph = new GraphView(layout);
+        var window = new Window { Width = 900, Height = 600, Content = graph };
+        try
+        {
+            window.Show();
+            GraphNode[] nodes = [new("a", "A", "Project"), new("b", "B", "Project")];
+            Dependency[] edges = [new("a", "b", "references")];
+            graph.SetGraph(nodes, edges);
+            graph.Fit();
+            var selected = "";
+            graph.NodeSelected += id => selected = id;
+
+            window.MouseDown(new Point(60, 60), Avalonia.Input.MouseButton.Left);
+            window.MouseUp(new Point(60, 60), Avalonia.Input.MouseButton.Left);
+
+            Assert.That(layout.Nodes, Is.EqualTo(nodes));
+            Assert.That(layout.Edges, Is.EqualTo(edges));
+            Assert.That(layout.NodeSize.Width, Is.GreaterThan(0));
+            Assert.That(layout.NodeSize.Height, Is.GreaterThan(0));
+            Assert.That(selected, Is.EqualTo("b"), "Fit must keep negative layout coordinates visible and usable.");
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaTest]
     public void MainWindowLoadsAllThreeAnalysisViews()
     {
         var window = new MainWindow();

@@ -6,7 +6,7 @@ These instructions apply to all C#/.NET engineering tasks in this repository, in
 
 Treat requests as production engineering unless the user explicitly requests a prototype or pseudocode.
 
-Target the repository's existing .NET framework versions, architectural conventions, and dependency choices. When the repository provides no established guidance, follow current Microsoft recommendations.
+Target the repository's existing .NET versions, architectural conventions, and dependency choices. When the repository provides no established guidance, follow current Microsoft recommendations.
 
 Prefer the smallest coherent change that addresses the requirement without introducing unnecessary complexity.
 
@@ -24,6 +24,7 @@ Prefer the smallest coherent change that addresses the requirement without intro
 - Use ProblemDetails-style error responses where compatible with the existing API contract.
 - Treat compiler warnings and analyzer diagnostics as design feedback.
 - One class per file unless a justification can be made.
+- Make logic idempotent or stateless and objects immutable where it makes sense.
 
 Avoid:
 
@@ -35,6 +36,9 @@ Avoid:
 - Introducing interfaces, abstractions, or architectural layers without a concrete benefit.
 - Exposing persistence entities as unstable public API contracts.
 - Comments that merely restate the implementation.
+
+## UI
+- When adding filters, support RegEx by default unless otherwise stated.
 
 ## Testing
 

@@ -8,10 +8,12 @@ namespace CodeAnalyzer.UI;
 
 public sealed class GraphView : Control
 {
+    private readonly IGraphLayout layout;
     private IReadOnlyList<GraphNode> nodes = [];
     private IReadOnlyList<Dependency> edges = [];
     private readonly Dictionary<string, Point> positions = [];
     private double scale = 1;
+    private double minimumScale = 0.08;
     private Vector offset = new(30, 30);
     private Point lastPointer;
     private string? dragging;
@@ -23,8 +25,12 @@ public sealed class GraphView : Control
     public event Action<string>? NodeSelected;
     public event Action<string>? NodeOpened;
 
-    public GraphView()
+    public GraphView() : this(new LayeredGraphLayout()) { }
+
+    public GraphView(IGraphLayout layout)
     {
+        ArgumentNullException.ThrowIfNull(layout);
+        this.layout = layout;
         ClipToBounds = true;
         Focusable = true;
         PointerPressed += Pressed;
@@ -37,25 +43,26 @@ public sealed class GraphView : Control
 
     public void SetGraph(IReadOnlyList<GraphNode> newNodes, IReadOnlyList<Dependency> newEdges, string? selectedId = null)
     {
+        var newPositions = layout.Calculate(newNodes, newEdges, new Size(NodeWidth, NodeHeight));
         nodes = newNodes;
         edges = newEdges;
         selected = selectedId;
         positions.Clear();
-        // A stable grid keeps cyclic graphs usable; nodes can be rearranged by dragging.
-        var columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(nodes.Count)));
-        for(var i = 0; i < nodes.Count; i++)
-            positions[nodes[i].Id] = new Point(i % columns * 300, i / columns * 130);
+        foreach(var node in nodes) positions.Add(node.Id, newPositions[node.Id]);
         Fit();
     }
 
     public void Fit()
     {
         if(positions.Count == 0) { InvalidateVisual(); return; }
-        var width = positions.Values.Max(p => p.X) + NodeWidth;
-        var height = positions.Values.Max(p => p.Y) + NodeHeight;
-        scale = Math.Clamp(Math.Min(Math.Max(100, Bounds.Width - 60) / width,
-            Math.Max(100, Bounds.Height - 60) / height), 0.08, 1.3);
-        offset = new Vector(30, 30);
+        var minX = positions.Values.Min(p => p.X);
+        var minY = positions.Values.Min(p => p.Y);
+        var width = positions.Values.Max(p => p.X) + NodeWidth - minX;
+        var height = positions.Values.Max(p => p.Y) + NodeHeight - minY;
+        scale = Math.Min(Math.Min(Math.Max(100, Bounds.Width - 60) / width,
+            Math.Max(100, Bounds.Height - 60) / height), 1.3);
+        minimumScale = Math.Min(0.08, scale);
+        offset = new Vector(30 - minX * scale, 30 - minY * scale);
         InvalidateVisual();
     }
 
@@ -156,7 +163,7 @@ public sealed class GraphView : Control
     {
         var point = e.GetPosition(this);
         var world = ToWorld(point);
-        scale = Math.Clamp(scale * Math.Pow(1.15, e.Delta.Y), 0.08, 4);
+        scale = Math.Clamp(scale * Math.Pow(1.15, e.Delta.Y), minimumScale, 4);
         offset = new Vector(point.X - world.X * scale, point.Y - world.Y * scale);
         InvalidateVisual();
         e.Handled = true;

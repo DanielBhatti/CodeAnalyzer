@@ -20,6 +20,8 @@ Open a `.slnx`, `.sln`, `.csproj`, or `.fsproj`, or paste its path and click **A
 
 On either graph: wheel to zoom around the pointer, drag the background to pan, drag a node to move it, and use **Fit graph** to fit the current arrangement. Test projects are hidden initially, based on the evaluated `IsTestProject` property. Name-only test-project conventions are not inferred.
 
+Graphs arrange dependencies in layers and use eight ordering sweeps to reduce edge crossings. Disconnected groups are packed separately. Placement is deterministic; cycles are retained, with backward edges ignored only when assigning layers. This heuristic does not guarantee the fewest possible crossings, and long edges can still cross nodes or other edges.
+
 ## Analysis definitions and limits
 
 Type relationships use Roslyn semantic symbols, including references within generic type arguments. Types from external assemblies are excluded. Partial declarations merge into one node and their source previews are combined. Structs, records, interfaces, and enums are included alongside classes. Generated documents (`obj`, `bin`, `.g.cs`, `.generated.cs`, or an auto-generated header) are excluded. Static relationships do not reconstruct runtime dispatch, reflection, or dependency-injection wiring. This is a type-usage graph, not a method call graph.
@@ -31,6 +33,8 @@ F# projects appear in the project graph. F# source dependencies and complexity a
 ## Development
 
 `CodeAnalyzer` owns analysis and immutable result records. `CodeAnalyzer.UI` owns presentation and graph interaction. `CodeAnalyzer.Test` covers decision counts, semantic resolution across projects, conditional references, partial/nested types, cancellation, and headless Avalonia controls.
+
+Node placement is independent of rendering: implement `IGraphLayout.Calculate` and supply it to `GraphView(IGraphLayout)` to replace the default `LayeredGraphLayout`. Layouts receive nodes, dependencies, and node dimensions, and return top-left positions keyed by node ID. The parameterless constructor used by XAML selects the default strategy. Dragging, hit testing, and fitting use the returned positions.
 
 ```powershell
 dotnet build CodeAnalyzer.slnx
