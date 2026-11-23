@@ -12,7 +12,7 @@ public static class BuildEnvironment
         lock(RegistrationLock)
         {
             if(!MSBuildLocator.IsRegistered)
-                MSBuildLocator.RegisterDefaults();
+                _ = MSBuildLocator.RegisterDefaults();
         }
     }
 }

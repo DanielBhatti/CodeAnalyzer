@@ -23,6 +23,7 @@ Prefer the smallest coherent change that addresses the requirement without intro
 - Dispose of resources deterministically using appropriate synchronous or asynchronous disposal.
 - Use ProblemDetails-style error responses where compatible with the existing API contract.
 - Treat compiler warnings and analyzer diagnostics as design feedback.
+- One class per file unless a justification can be made.
 
 Avoid:
 

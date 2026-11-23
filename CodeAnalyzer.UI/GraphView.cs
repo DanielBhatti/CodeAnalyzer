@@ -1,12 +1,10 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using System.Globalization;
 
 namespace CodeAnalyzer.UI;
-
-public sealed record GraphNode(string Id, string Label, string Subtitle, int Complexity = 0);
 
 public sealed class GraphView : Control
 {
@@ -115,7 +113,7 @@ public sealed class GraphView : Control
     private void Pressed(object? sender, PointerPressedEventArgs e)
     {
         if(!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        Focus();
+        _ = Focus();
         lastPointer = e.GetPosition(this);
         var world = ToWorld(lastPointer);
         dragging = nodes.LastOrDefault(n => new Rect(positions[n.Id], new Size(NodeWidth, NodeHeight)).Contains(world))?.Id;

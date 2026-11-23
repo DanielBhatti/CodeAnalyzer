@@ -35,6 +35,9 @@ F# projects appear in the project graph. F# source dependencies and complexity a
 ```powershell
 dotnet build CodeAnalyzer.slnx
 dotnet test CodeAnalyzer.slnx
+dotnet format CodeAnalyzer.slnx --no-restore --verify-no-changes --severity warn
 ```
+
+Builds enforce the code-style diagnostics configured in `.editorconfig`.
 
 In restricted environments, `-p:UsedAvaloniaProducts=` skips Avalonia's build telemetry task when its user-profile log directory is inaccessible.

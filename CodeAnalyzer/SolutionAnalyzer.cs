@@ -1,10 +1,10 @@
-using System.Collections.Concurrent;
-using System.Xml.Linq;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
+using System.Collections.Concurrent;
+using System.Xml.Linq;
 
 namespace CodeAnalyzer;
 
@@ -45,7 +45,7 @@ public sealed class SolutionAnalyzer
                         warnings.Enqueue($"Missing project reference: {projectPath} → {target}");
                         continue;
                     }
-                    projectEdges.Add(new(projectPath, target, "references"));
+                    _ = projectEdges.Add(new(projectPath, target, "references"));
                     pending.Enqueue(target);
                 }
                 collection.UnloadProject(project);
@@ -59,7 +59,7 @@ public sealed class SolutionAnalyzer
             token.ThrowIfCancellationRequested();
             progress?.Report($"Loading {project.Name}…");
             if(workspace.CurrentSolution.Projects.Any(p => SamePath(p.FilePath, project.Id))) continue;
-            await workspace.OpenProjectAsync(project.Id, cancellationToken: token).ConfigureAwait(false);
+            _ = await workspace.OpenProjectAsync(project.Id, cancellationToken: token).ConfigureAwait(false);
         }
         if(projects.Values.Any(p => p.Language != "C#"))
             warnings.Enqueue("F# projects are included in the project graph. Type dependencies and complexity cover C# only.");
@@ -150,7 +150,7 @@ public sealed class SolutionAnalyzer
         if(type is IArrayTypeSymbol array) AddTypeEdges(source, array.ElementType, kind, edges);
         if(type is not INamedTypeSymbol named) return;
         var target = TypeId(named);
-        if(target != source) edges.Add(new(source, target, kind));
+        if(target != source) _ = edges.Add(new(source, target, kind));
         foreach(var argument in named.TypeArguments)
             AddTypeEdges(source, argument, kind, edges);
     }

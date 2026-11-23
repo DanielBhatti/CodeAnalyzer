@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using NUnit.Framework;
+using System.Diagnostics;
 
 namespace CodeAnalyzer.Test;
 
@@ -9,12 +9,14 @@ public sealed class SolutionAnalyzerTests
     [Test]
     public async Task ResolvesEvaluatedProjectsSemanticDependenciesAndComplexityAsync()
     {
-        var directory = Path.GetFullPath(Path.Combine(TestContext.CurrentContext.WorkDirectory, "Fixtures", Guid.NewGuid().ToString("N")));
-        Directory.CreateDirectory(directory);
+        // Source files beneath bin or obj are intentionally excluded from analysis.
+        var fixtureRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "CodeAnalyzer.Tests"));
+        var directory = Path.Combine(fixtureRoot, Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
         try
         {
             foreach(var name in new[] { "Library", "Consumer", "Other", "Functional" })
-                Directory.CreateDirectory(Path.Combine(directory, name));
+                _ = Directory.CreateDirectory(Path.Combine(directory, name));
             await File.WriteAllTextAsync(Path.Combine(directory, "Library/Library.csproj"), Project()).ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "Other/Other.csproj"), Project()).ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "Functional/Functional.fsproj"), Project()).ConfigureAwait(false);
@@ -52,7 +54,9 @@ public sealed class SolutionAnalyzerTests
             using var restore = Process.Start(new ProcessStartInfo("dotnet")
             {
                 ArgumentList = { "restore", Path.Combine(directory, "Consumer/Consumer.csproj"), "--ignore-failed-sources" },
-                RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
             }) ?? throw new InvalidOperationException("Could not start fixture restore.");
             var output = restore.StandardOutput.ReadToEndAsync();
             var error = restore.StandardError.ReadToEndAsync();
@@ -65,7 +69,8 @@ public sealed class SolutionAnalyzerTests
             Assert.That(result.Projects.Select(p => p.Name), Is.EquivalentTo(new[] { "Library", "Consumer", "Other", "Functional" }));
             Assert.That(result.ProjectDependencies, Has.Count.EqualTo(1));
             Assert.That(result.Projects.Single(p => p.Name == "Consumer").IsTestProject, Is.True);
-            Assert.That(result.Types.Count(t => t.FullName == "App.Worker"), Is.EqualTo(1), "Partial classes must merge.");
+            Assert.That(result.Types.Count(t => t.FullName == "App.Worker"), Is.EqualTo(1),
+                "Partial classes must merge." + Environment.NewLine + string.Join(Environment.NewLine, result.Warnings));
             var worker = result.Types.Single(t => t.FullName == "App.Worker");
             var dependencies = result.TypeDependencies.Where(e => e.SourceId == worker.Id).ToArray();
             Assert.That(dependencies.Any(e => e.TargetId == result.Types.Single(t => t.FullName == "Shared.Base").Id && e.Kind == "inherits / implements"), Is.True);
@@ -80,7 +85,7 @@ public sealed class SolutionAnalyzerTests
         }
         finally
         {
-            var expectedRoot = Path.GetFullPath(Path.Combine(TestContext.CurrentContext.WorkDirectory, "Fixtures")) + Path.DirectorySeparatorChar;
+            var expectedRoot = fixtureRoot + Path.DirectorySeparatorChar;
             if(directory.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase)) Directory.Delete(directory, true);
         }
     }
@@ -90,7 +95,7 @@ public sealed class SolutionAnalyzerTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        _ = Assert.ThrowsAsync<OperationCanceledException>(async () =>
             await new SolutionAnalyzer().AnalyzeAsync(typeof(SolutionAnalyzerTests).Assembly.Location, cancellationToken: cancellation.Token).ConfigureAwait(false));
     }
 
