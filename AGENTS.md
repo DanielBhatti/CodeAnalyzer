@@ -78,6 +78,11 @@ If validation cannot be performed, report the limitation and any relevant unveri
 - Do not perform destructive database or infrastructure operations without explicit authorization.
 - Identify material compatibility, migration, and operational risks.
 
+## Documentation and Written Material
+- Writing should be succinct, easy to read, and easy to understand.
+- Minimize fluff.
+- Take into account the target audience.  Be casual or formal depending on the context.  Write like a human would if it's to be read by humans.
+
 ## Final Response
 
 Unless the user requests another format, summarize:
