@@ -52,12 +52,31 @@ public sealed class SolutionAnalyzer
             }
         }
 
+        var projectIds = projects.Keys.ToDictionary(id => id, StringComparer.OrdinalIgnoreCase);
+        projectEdges = projectEdges.Select(e => new Dependency(projectIds[e.SourceId], projectIds[e.TargetId], e.Kind)).ToHashSet();
+        var projectCycles = DependencyCycles.Find(projects.Keys, projectEdges, token);
+        var blockedProjects = projectCycles.SelectMany(c => c.NodeIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var dependents = projectEdges.GroupBy(e => e.TargetId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.SourceId).ToArray(), StringComparer.OrdinalIgnoreCase);
+        var blockedQueue = new Queue<string>(blockedProjects);
+        while(blockedQueue.TryDequeue(out var blocked))
+        {
+            token.ThrowIfCancellationRequested();
+            foreach(var dependent in dependents.GetValueOrDefault(blocked) ?? [])
+                if(blockedProjects.Add(dependent)) blockedQueue.Enqueue(dependent);
+        }
+
         using var workspace = MSBuildWorkspace.Create(new Dictionary<string, string> { ["Configuration"] = "Debug" });
         using var failureHandler = workspace.RegisterWorkspaceFailedHandler(e => warnings.Enqueue(e.Diagnostic.Message));
         foreach(var project in projects.Values.Where(p => p.Language == "C#"))
         {
             token.ThrowIfCancellationRequested();
             progress?.Report($"Loading {project.Name}…");
+            if(blockedProjects.Contains(project.Id))
+            {
+                warnings.Enqueue($"{project.Name}: C# source analysis skipped because the project participates in or depends on a project dependency cycle. Project dependencies and cycles remain available.");
+                continue;
+            }
             if(workspace.CurrentSolution.Projects.Any(p => SamePath(p.FilePath, project.Id))) continue;
             _ = await workspace.OpenProjectAsync(project.Id, cancellationToken: token).ConfigureAwait(false);
         }
@@ -65,6 +84,7 @@ public sealed class SolutionAnalyzer
             warnings.Enqueue("F# projects are included in the project graph. Type dependencies and complexity cover C# only.");
 
         var types = new Dictionary<string, TypeInfo>();
+        var typeLines = new Dictionary<string, HashSet<(SyntaxTree Tree, int Line)>>();
         var typeEdges = new HashSet<Dependency>();
         var methods = new List<MethodMetric>();
         foreach(var project in workspace.CurrentSolution.Projects.Where(p => p.Language == LanguageNames.CSharp))
@@ -92,13 +112,25 @@ public sealed class SolutionAnalyzer
                     if(model.GetDeclaredSymbol(declaration, token) is not INamedTypeSymbol symbol) continue;
                     var id = TypeId(symbol);
                     var location = declaration.GetLocation().GetLineSpan();
+                    if(!typeLines.TryGetValue(id, out var lines))
+                    {
+                        lines = [];
+                        typeLines.Add(id, lines);
+                    }
+                    foreach(var line in LinesOfCode.GetLines(declaration, true)) _ = lines.Add((root.SyntaxTree, line));
+                    var sourcePart = new SourcePart(document.FilePath ?? "", location.StartLinePosition.Line + 1, declaration.ToString());
                     var partSource = $"// {document.FilePath}:{location.StartLinePosition.Line + 1}"
                         + Environment.NewLine + declaration;
                     if(types.TryGetValue(id, out var existing))
-                        types[id] = existing with { Source = existing.Source + Environment.NewLine + Environment.NewLine + partSource };
+                        types[id] = existing with
+                        {
+                            Source = existing.Source + Environment.NewLine + Environment.NewLine + partSource,
+                            SourceParts = existing.SourceParts.Append(sourcePart).ToArray()
+                        };
                     else
                         types.Add(id, new(id, symbol.Name, symbol.ToDisplayString(), info.Id,
-                            document.FilePath ?? "", location.StartLinePosition.Line + 1, partSource));
+                            document.FilePath ?? "", location.StartLinePosition.Line + 1, partSource)
+                        { SourceParts = [sourcePart] });
                     // Stop at nested types: their dependencies belong to their own nodes.
                     foreach(var node in declaration.DescendantNodes(n => n == declaration || n is not BaseTypeDeclarationSyntax))
                     {
@@ -125,17 +157,33 @@ public sealed class SolutionAnalyzer
                                 ?? $"{symbol.ToDisplayString()}.lambda@{span.StartLinePosition.Line + 1}";
                             methods.Add(new(name, id, info.Id, document.FilePath ?? "", span.StartLinePosition.Line + 1,
                                 CyclomaticComplexity.Calculate(node), span.EndLinePosition.Line - span.StartLinePosition.Line + 1,
-                                node.ToString()));
+                                node.ToString())
+                            {
+                                CognitiveComplexity = CognitiveComplexity.Calculate(node),
+                                LinesOfCode = LinesOfCode.Calculate(node),
+                                MaintainabilityIndex = MaintainabilityIndex.Calculate(node)
+                            });
                         }
                     }
                 }
             }
         }
+        var analyzedEdges = typeEdges.Where(e => types.ContainsKey(e.SourceId) && types.ContainsKey(e.TargetId)).ToArray();
+        var coupling = analyzedEdges.GroupBy(e => e.SourceId)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.TargetId).Distinct().Count());
         return new(projects.Values.OrderBy(p => p.Name).ToArray(), projectEdges.ToArray(),
-            types.Values.OrderBy(t => t.FullName).ToArray(),
-            typeEdges.Where(e => types.ContainsKey(e.SourceId) && types.ContainsKey(e.TargetId)).ToArray(),
+            types.Values.Select(t => t with
+            {
+                ClassCoupling = coupling.GetValueOrDefault(t.Id),
+                LinesOfCode = typeLines[t.Id].Count
+            }).OrderBy(t => t.FullName).ToArray(),
+            analyzedEdges,
             methods.OrderByDescending(m => m.Complexity).ThenBy(m => m.Name).ToArray(),
-            warnings.Distinct().ToArray());
+            warnings.Distinct().ToArray())
+        {
+            ProjectCycles = projectCycles,
+            TypeCycles = DependencyCycles.Find(types.Keys, analyzedEdges, token)
+        };
     }
 
     private static bool HasBody(SyntaxNode node) => node switch

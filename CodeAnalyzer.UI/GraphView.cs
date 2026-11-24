@@ -19,8 +19,8 @@ public sealed class GraphView : Control
     private string? dragging;
     private bool panning;
     private string? selected;
-    private const double NodeWidth = 220;
-    private const double NodeHeight = 66;
+    private double nodeWidth = 220;
+    private double nodeHeight = 66;
 
     public event Action<string>? NodeSelected;
     public event Action<string>? NodeOpened;
@@ -43,7 +43,10 @@ public sealed class GraphView : Control
 
     public void SetGraph(IReadOnlyList<GraphNode> newNodes, IReadOnlyList<Dependency> newEdges, string? selectedId = null)
     {
-        var newPositions = layout.Calculate(newNodes, newEdges, new Size(NodeWidth, NodeHeight));
+        var hasMetrics = newNodes.Any(n => n.Metrics.Length > 0);
+        nodeWidth = hasMetrics ? 300 : 220;
+        nodeHeight = hasMetrics ? 72 + newNodes.Max(n => n.Metrics.Split('\n').Length) * 18 : 66;
+        var newPositions = layout.Calculate(newNodes, newEdges, new Size(nodeWidth, nodeHeight));
         nodes = newNodes;
         edges = newEdges;
         selected = selectedId;
@@ -57,8 +60,8 @@ public sealed class GraphView : Control
         if(positions.Count == 0) { InvalidateVisual(); return; }
         var minX = positions.Values.Min(p => p.X);
         var minY = positions.Values.Min(p => p.Y);
-        var width = positions.Values.Max(p => p.X) + NodeWidth - minX;
-        var height = positions.Values.Max(p => p.Y) + NodeHeight - minY;
+        var width = positions.Values.Max(p => p.X) + nodeWidth - minX;
+        var height = positions.Values.Max(p => p.Y) + nodeHeight - minY;
         scale = Math.Min(Math.Min(Math.Max(100, Bounds.Width - 60) / width,
             Math.Max(100, Bounds.Height - 60) / height), 1.3);
         minimumScale = Math.Min(0.08, scale);
@@ -79,12 +82,12 @@ public sealed class GraphView : Control
         foreach(var edge in edges)
         {
             if(!positions.TryGetValue(edge.SourceId, out var start) || !positions.TryGetValue(edge.TargetId, out var end)) continue;
-            var a = start + new Vector(NodeWidth / 2, NodeHeight / 2);
-            var b = end + new Vector(NodeWidth / 2, NodeHeight / 2);
+            var a = start + new Vector(nodeWidth / 2, nodeHeight / 2);
+            var b = end + new Vector(nodeWidth / 2, nodeHeight / 2);
             var delta = new Vector(b.X - a.X, b.Y - a.Y);
             if(delta.Length < 1) continue;
-            var fraction = Math.Min(NodeWidth / 2 / Math.Max(0.001, Math.Abs(delta.X)),
-                NodeHeight / 2 / Math.Max(0.001, Math.Abs(delta.Y)));
+            var fraction = Math.Min(nodeWidth / 2 / Math.Max(0.001, Math.Abs(delta.X)),
+                nodeHeight / 2 / Math.Max(0.001, Math.Abs(delta.Y)));
             b -= delta * Math.Min(0.49, fraction);
             var connected = edge.SourceId == selected || edge.TargetId == selected;
             var brush = connected ? Brushes.Gold : edge.Kind == "inherits / implements" ? Brushes.MediumPurple : Brushes.SlateGray;
@@ -98,7 +101,7 @@ public sealed class GraphView : Control
         foreach(var node in nodes)
         {
             var point = positions[node.Id];
-            var rectangle = new Rect(point, new Size(NodeWidth, NodeHeight));
+            var rectangle = new Rect(point, new Size(nodeWidth, nodeHeight));
             var fill = new SolidColorBrush(Color.Parse(node.Id == selected ? "#264B66" : "#213044"));
             context.DrawRectangle(fill, new Pen(node.Id == selected ? Brushes.Gold : Brushes.SlateGray, 1), rectangle, 8, 8);
             var indicator = node.Complexity > 20 ? Brushes.Salmon : node.Complexity > 10 ? Brushes.Gold : Brushes.MediumTurquoise;
@@ -107,6 +110,8 @@ public sealed class GraphView : Control
             {
                 DrawText(context, node.Label, point + new Vector(12, 10), Brushes.White, 14);
                 DrawText(context, node.Subtitle, point + new Vector(12, 36), Brushes.LightSlateGray, 11);
+                if(node.Metrics.Length > 0)
+                    DrawText(context, node.Metrics, point + new Vector(12, 58), Brushes.LightGray, 11);
             }
         }
     }
@@ -123,7 +128,7 @@ public sealed class GraphView : Control
         _ = Focus();
         lastPointer = e.GetPosition(this);
         var world = ToWorld(lastPointer);
-        dragging = nodes.LastOrDefault(n => new Rect(positions[n.Id], new Size(NodeWidth, NodeHeight)).Contains(world))?.Id;
+        dragging = nodes.LastOrDefault(n => new Rect(positions[n.Id], new Size(nodeWidth, nodeHeight)).Contains(world))?.Id;
         panning = dragging is null;
         e.Pointer.Capture(this);
         if(dragging is not null)
@@ -145,8 +150,8 @@ public sealed class GraphView : Control
         else
         {
             var world = ToWorld(point);
-            var node = nodes.LastOrDefault(n => new Rect(positions[n.Id], new Size(NodeWidth, NodeHeight)).Contains(world));
-            ToolTip.SetTip(this, node is null ? null : $"{node.Label}\n{node.Subtitle}");
+            var node = nodes.LastOrDefault(n => new Rect(positions[n.Id], new Size(nodeWidth, nodeHeight)).Contains(world));
+            ToolTip.SetTip(this, node is null ? null : $"{node.Label}\n{node.Subtitle}\n{node.Metrics}");
         }
         lastPointer = point;
         InvalidateVisual();

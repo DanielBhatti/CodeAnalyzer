@@ -6,4 +6,8 @@ public sealed record AnalysisSnapshot(
     IReadOnlyList<TypeInfo> Types,
     IReadOnlyList<Dependency> TypeDependencies,
     IReadOnlyList<MethodMetric> Methods,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings)
+{
+    public IReadOnlyList<DependencyCycle> ProjectCycles { get; init; } = [];
+    public IReadOnlyList<DependencyCycle> TypeCycles { get; init; } = [];
+}

@@ -14,20 +14,30 @@
       <TextBox x:Name="PathBox" PlaceholderText="Path to a .slnx, .sln, or project" />
       <Button x:Name="AnalyzeButton" Grid.Column="1" Content="Analyze" />
     </Grid>
-    <Grid Grid.Row="2" ColumnDefinitions="280,12,*" ColumnSpacing="0">
-      <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+    <Grid Grid.Row="2" ColumnDefinitions="320,12,*" ColumnSpacing="0">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" RowSpacing="12">
         <TextBlock Text="SCOPE" Classes="caption" />
         <ComboBox x:Name="ProjectFilter" Grid.Row="1" HorizontalAlignment="Stretch" />
         <CheckBox x:Name="TestsFilter" Grid.Row="2" Content="Include test projects" IsChecked="False" />
-        <TextBox x:Name="SearchBox" Grid.Row="3" PlaceholderText="Filter classes and methods…" />
-        <Grid Grid.Row="4" RowDefinitions="Auto,*" RowSpacing="8">
+        <TextBox x:Name="SearchBox" Grid.Row="3" PlaceholderText="Filter names (RegEx)…" />
+        <ComboBox x:Name="TypeSort" Grid.Row="4" SelectedIndex="0" HorizontalAlignment="Stretch">
+          <ComboBoxItem Content="Sort: Name" />
+          <ComboBoxItem Content="Sort: Cyclomatic complexity" />
+          <ComboBoxItem Content="Sort: Cognitive complexity" />
+          <ComboBoxItem Content="Sort: Class coupling" />
+          <ComboBoxItem Content="Sort: Maintainability index" />
+          <ComboBoxItem Content="Sort: Dependency cycles" />
+          <ComboBoxItem Content="Sort: Lines of code" />
+        </ComboBox>
+        <Grid Grid.Row="5" RowDefinitions="Auto,*" RowSpacing="8">
           <TextBlock x:Name="TypesLabel" Text="Classes / types" Classes="caption" />
           <ListBox x:Name="TypeList" Grid.Row="1">
             <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="analysis:TypeInfo">
+              <DataTemplate x:DataType="local:TypeRow">
                 <StackPanel Margin="0,5">
                   <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                   <TextBlock Text="{Binding FullName}" FontSize="11" Classes="caption" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding MetricsLabel}" FontSize="11" Classes="caption" TextWrapping="Wrap" Margin="0,4,0,0" />
                 </StackPanel>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -57,20 +67,27 @@
           </TabItem>
           <TabItem Header="Method complexity">
             <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <TextBlock Text="Minimum complexity" Classes="caption" VerticalAlignment="Center" />
+              <WrapPanel Orientation="Horizontal">
+                <ComboBox x:Name="MethodMetricSelector" SelectedIndex="0" Width="190">
+                  <ComboBoxItem Content="Cyclomatic complexity" />
+                  <ComboBoxItem Content="Cognitive complexity" />
+                  <ComboBoxItem Content="Maintainability index" />
+                  <ComboBoxItem Content="Lines of code" />
+                </ComboBox>
+                <TextBlock Text="Minimum cyclomatic" Classes="caption" VerticalAlignment="Center" Margin="12,0" />
                 <NumericUpDown x:Name="MinimumComplexity" Minimum="1" Maximum="10000" Value="1" Width="110" />
-                <TextBlock x:Name="MethodCount" Classes="caption" VerticalAlignment="Center" />
-              </StackPanel>
-              <TextBlock Grid.Row="1" Text="Bars show decision count. Gold > 10, red > 20 are review cues, not quality grades." Classes="caption" TextWrapping="Wrap" />
+                <TextBlock x:Name="MethodCount" Classes="caption" VerticalAlignment="Center" Margin="12,0" />
+              </WrapPanel>
+              <TextBlock Grid.Row="1" Text="Complexity: lower is simpler. Maintainability: 0–100, higher is better (syntax-based estimate). Select a function for source." Classes="caption" TextWrapping="Wrap" />
               <ListBox x:Name="MethodList" Grid.Row="2">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="local:MethodRow">
                     <Grid ColumnDefinitions="60,*,130" Margin="0,6" ColumnSpacing="12">
-                      <TextBlock Text="{Binding Complexity}" FontSize="24" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding ValueLabel}" FontSize="24" FontWeight="SemiBold" />
                       <StackPanel Grid.Column="1">
                         <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Location}" FontSize="11" Classes="caption" />
+                        <TextBlock Text="{Binding MetricsLabel}" FontSize="11" Classes="caption" />
                         <Border Width="{Binding BarWidth}" Background="{Binding BarBrush}" Height="4" HorizontalAlignment="Left" Margin="0,5,0,0" />
                       </StackPanel>
                       <TextBlock Grid.Column="2" Text="{Binding SizeLabel}" Classes="caption" />
@@ -80,7 +97,7 @@
               </ListBox>
             </Grid>
           </TabItem>
-          <TabItem Header="Analysis notes">
+          <TabItem Header="Definitions">
             <TextBox x:Name="WarningsBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                      Text="Open a solution to begin. Analysis uses the Debug configuration. Restore the target solution first." />
           </TabItem>
@@ -88,9 +105,18 @@
         <GridSplitter Grid.Row="1" ResizeDirection="Rows" HorizontalAlignment="Stretch" />
         <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="8">
           <TextBlock x:Name="DetailTitle" Text="Selection details and source preview" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <TextBox x:Name="SourceBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas"
-                   FontSize="12" TextWrapping="NoWrap" ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                   Text="Mouse wheel: zoom · drag background: pan · drag nodes: rearrange · double-click a class node: explore its neighborhood" />
+          <ScrollViewer x:Name="SourceScroller" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Top">
+              <TextBox x:Name="LineNumbersBox" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas"
+                       FontSize="12" LineHeight="18" TextWrapping="NoWrap" TextAlignment="Right" Foreground="SlateGray"
+                       IsHitTestVisible="False" Focusable="False" IsVisible="False" MinWidth="48" Padding="8,4" BorderThickness="0"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" />
+              <TextBox x:Name="SourceBox" Grid.Column="1" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas"
+                       FontSize="12" LineHeight="18" TextWrapping="NoWrap" Padding="8,4" BorderThickness="0"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                       Text="Mouse wheel: zoom · drag background: pan · drag nodes: rearrange · double-click a class node: explore its neighborhood" />
+            </Grid>
+          </ScrollViewer>
         </Grid>
       </Grid>
     </Grid>

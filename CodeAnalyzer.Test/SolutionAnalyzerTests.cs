@@ -7,6 +7,56 @@ namespace CodeAnalyzer.Test;
 public sealed class SolutionAnalyzerTests
 {
     [Test]
+    public async Task ReturnsProjectCyclesAndAnalyzesIndependentProjectsWhenReferencesAreCircularAsync()
+    {
+        var fixtureRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "CodeAnalyzer.Tests"));
+        var directory = Path.Combine(fixtureRoot, Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        try
+        {
+            foreach(var name in new[] { "First", "Second", "Dependent", "Independent" })
+            {
+                var target = name switch { "First" => "Second", "Second" => "First", "Dependent" => "First", _ => null };
+                var references = target is null ? "" : $"<ItemGroup><ProjectReference Include=\"{target}.csproj\" /></ItemGroup>";
+                await File.WriteAllTextAsync(Path.Combine(directory, name + ".csproj"),
+                    $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include=\"{name}.cs\" /></ItemGroup>{references}</Project>").ConfigureAwait(false);
+                await File.WriteAllTextAsync(Path.Combine(directory, name + ".cs"), $"public class {name} {{ public int Run() => 1; }}").ConfigureAwait(false);
+            }
+            await File.WriteAllTextAsync(Path.Combine(directory, "Fixture.slnx"),
+                "<Solution><Project Path=\"First.csproj\" /><Project Path=\"Second.csproj\" /><Project Path=\"Dependent.csproj\" /><Project Path=\"Independent.csproj\" /></Solution>").ConfigureAwait(false);
+            using var restore = Process.Start(new ProcessStartInfo("dotnet")
+            {
+                ArgumentList = { "restore", Path.Combine(directory, "Independent.csproj"), "--ignore-failed-sources" },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }) ?? throw new InvalidOperationException("Could not start fixture restore.");
+            var output = restore.StandardOutput.ReadToEndAsync();
+            var error = restore.StandardError.ReadToEndAsync();
+            await restore.WaitForExitAsync().ConfigureAwait(false);
+            var restoreOutput = await output.ConfigureAwait(false);
+            var restoreError = await error.ConfigureAwait(false);
+            Assert.That(restore.ExitCode, Is.Zero, restoreOutput + restoreError);
+
+            var result = await new SolutionAnalyzer().AnalyzeAsync(Path.Combine(directory, "Fixture.slnx")).ConfigureAwait(false);
+            Assert.That(result.Projects, Has.Count.EqualTo(4));
+            Assert.That(result.ProjectDependencies, Has.Count.EqualTo(3));
+            Assert.That(result.ProjectCycles, Has.Count.EqualTo(1));
+            Assert.That(result.ProjectCycles[0].NodeIds.Select(Path.GetFileNameWithoutExtension), Is.EquivalentTo(new[] { "First", "Second" }));
+            Assert.That(result.Types.Select(t => t.Name), Is.EqualTo(new[] { "Independent" }));
+            Assert.That(result.Methods.Select(m => m.Name), Has.Some.Contains("Independent.Run"));
+            foreach(var skipped in new[] { "First", "Second", "Dependent" })
+                Assert.That(result.Warnings.Any(w => w.Contains(skipped, StringComparison.Ordinal) && w.Contains("cycl", StringComparison.OrdinalIgnoreCase)), Is.True,
+                    string.Join(Environment.NewLine, result.Warnings));
+        }
+        finally
+        {
+            var expectedRoot = fixtureRoot + Path.DirectorySeparatorChar;
+            if(directory.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase)) Directory.Delete(directory, true);
+        }
+    }
+
+    [Test]
     public async Task ResolvesEvaluatedProjectsSemanticDependenciesAndComplexityAsync()
     {
         // Source files beneath bin or obj are intentionally excluded from analysis.
@@ -32,6 +82,9 @@ public sealed class SolutionAnalyzerTests
                 public class Base { }
                 public interface IContract { }
                 public class Item { }
+                public class CycleA { public CycleB Value = new(); }
+                public class CycleB { public CycleA Value = null!; }
+                public partial class Split {} public partial class Split { }
                 """).ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "Other/Types.cs"), "namespace Other; public class Item { }").ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(directory, "Consumer/Types.cs"), """
@@ -77,6 +130,23 @@ public sealed class SolutionAnalyzerTests
             Assert.That(dependencies.Any(e => e.TargetId == result.Types.Single(t => t.FullName == "Shared.Item").Id), Is.True);
             Assert.That(dependencies.Any(e => e.TargetId == result.Types.Single(t => t.FullName == "Other.Item").Id), Is.False);
             Assert.That(result.Methods.Single(m => m.Name.Contains("Worker.Run")).Complexity, Is.EqualTo(2));
+            var run = result.Methods.Single(m => m.Name.Contains("Worker.Run"));
+            Assert.That(run.CyclomaticComplexity, Is.EqualTo(2));
+            Assert.That(run.CognitiveComplexity, Is.EqualTo(1));
+            Assert.That(run.MaintainabilityIndex, Is.InRange(0, 100));
+            Assert.That(run.LinesOfCode, Is.EqualTo(1));
+            Assert.That(worker.LinesOfCode, Is.EqualTo(7), "Partial declarations merge; the nested class belongs to its own node.");
+            Assert.That(worker.SourceParts, Has.Count.EqualTo(2));
+            Assert.That(worker.SourceParts.Select(p => p.Line), Is.Ordered);
+            Assert.That(worker.SourceParts.All(p => p.FilePath.EndsWith("Types.cs", StringComparison.Ordinal)), Is.True);
+            Assert.That(result.Types.Single(t => t.Name == "Nested").LinesOfCode, Is.EqualTo(1));
+            Assert.That(result.Types.Single(t => t.Name == "Split").LinesOfCode, Is.EqualTo(1), "Partial declarations on one physical line count that line once.");
+            Assert.That(worker.ClassCoupling, Is.EqualTo(3), "Count distinct analyzed dependency types across partial declarations, excluding nested types and external assemblies.");
+            Assert.That(result.Types.Single(t => t.FullName == "Shared.Item").ClassCoupling, Is.Zero);
+            Assert.That(result.ProjectCycles, Is.Empty);
+            var cycleIds = result.Types.Where(t => t.Name is "CycleA" or "CycleB").Select(t => t.Id).ToArray();
+            Assert.That(result.TypeCycles, Has.Count.EqualTo(1));
+            Assert.That(result.TypeCycles[0].NodeIds, Is.EquivalentTo(cycleIds));
             Assert.That(result.Methods.Single(m => m.Name.Contains("Worker.Outer") && !m.Name.Contains("Local")).Complexity, Is.EqualTo(1));
             Assert.That(result.Methods.Count(m => m.Name.Contains("Run")), Is.EqualTo(1));
             Assert.That(result.Warnings.Any(w => w.Contains("F#")), Is.True);
