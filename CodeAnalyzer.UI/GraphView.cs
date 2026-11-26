@@ -12,18 +12,32 @@ public sealed class GraphView : Control
     private IReadOnlyList<GraphNode> nodes = [];
     private IReadOnlyList<Dependency> edges = [];
     private readonly Dictionary<string, Point> positions = [];
+    private readonly Dictionary<string, Point> originalPositions = [];
+    private string? originalSelection;
     private double scale = 1;
     private double minimumScale = 0.08;
     private Vector offset = new(30, 30);
     private Point lastPointer;
     private string? dragging;
     private bool panning;
+    private bool fitWhenVisible;
     private string? selected;
     private double nodeWidth = 220;
     private double nodeHeight = 66;
 
     public event Action<string>? NodeSelected;
     public event Action<string>? NodeOpened;
+
+    public bool ShowMetrics
+    {
+        get;
+        set
+        {
+            if(field == value) return;
+            field = value;
+            SetGraph(nodes, edges, originalSelection);
+        }
+    } = true;
 
     public GraphView() : this(new LayeredGraphLayout()) { }
 
@@ -38,26 +52,57 @@ public sealed class GraphView : Control
         PointerReleased += Released;
         PointerCaptureLost += (_, _) => { dragging = null; panning = false; };
         PointerWheelChanged += Wheel;
-        SizeChanged += (_, _) => InvalidateVisual();
+        SizeChanged += (_, _) =>
+        {
+            if(fitWhenVisible) Fit();
+            else InvalidateVisual();
+        };
     }
 
     public void SetGraph(IReadOnlyList<GraphNode> newNodes, IReadOnlyList<Dependency> newEdges, string? selectedId = null)
     {
-        var hasMetrics = newNodes.Any(n => n.Metrics.Length > 0);
+        var hasMetrics = ShowMetrics && newNodes.Any(n => n.Metrics.Length > 0);
         nodeWidth = hasMetrics ? 300 : 220;
         nodeHeight = hasMetrics ? 72 + newNodes.Max(n => n.Metrics.Split('\n').Length) * 18 : 66;
         var newPositions = layout.Calculate(newNodes, newEdges, new Size(nodeWidth, nodeHeight));
         nodes = newNodes;
         edges = newEdges;
         selected = selectedId;
+        originalSelection = selectedId;
+        originalPositions.Clear();
         positions.Clear();
-        foreach(var node in nodes) positions.Add(node.Id, newPositions[node.Id]);
+        foreach(var node in nodes)
+        {
+            positions.Add(node.Id, newPositions[node.Id]);
+            originalPositions.Add(node.Id, newPositions[node.Id]);
+        }
+        dragging = null;
+        panning = false;
         Fit();
+    }
+
+    public void Reset()
+    {
+        dragging = null;
+        panning = false;
+        positions.Clear();
+        foreach(var (id, point) in originalPositions) positions.Add(id, point);
+        selected = originalSelection;
+        ToolTip.SetTip(this, null);
+        Fit();
+        if(originalSelection is not null) NodeSelected?.Invoke(originalSelection);
     }
 
     public void Fit()
     {
-        if(positions.Count == 0) { InvalidateVisual(); return; }
+        if(positions.Count == 0) { fitWhenVisible = false; InvalidateVisual(); return; }
+        if(Bounds.Width <= 0 || Bounds.Height <= 0)
+        {
+            fitWhenVisible = true;
+            InvalidateVisual();
+            return;
+        }
+        fitWhenVisible = false;
         var minX = positions.Values.Min(p => p.X);
         var minY = positions.Values.Min(p => p.Y);
         var width = positions.Values.Max(p => p.X) + nodeWidth - minX;
@@ -110,7 +155,7 @@ public sealed class GraphView : Control
             {
                 DrawText(context, node.Label, point + new Vector(12, 10), Brushes.White, 14);
                 DrawText(context, node.Subtitle, point + new Vector(12, 36), Brushes.LightSlateGray, 11);
-                if(node.Metrics.Length > 0)
+                if(ShowMetrics && node.Metrics.Length > 0)
                     DrawText(context, node.Metrics, point + new Vector(12, 58), Brushes.LightGray, 11);
             }
         }

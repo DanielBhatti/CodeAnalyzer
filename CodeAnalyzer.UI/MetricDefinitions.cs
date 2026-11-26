@@ -36,6 +36,12 @@ public static class MetricDefinitions
 
         Preview numbers match the original files, including blank and comment lines. Each partial declaration starts at its own file location.
 
+        GRAPH LEGEND AND SETTINGS
+        Arrows point to dependencies. Purple lines mean inheritance or interfaces; gray means usage or project references. Gold outlines and lines highlight the selected card and its connections.
+        Class card strips show maximum cyclomatic complexity: teal at 10 or below, gold at 11–20, red above 20. These colors are review cues, not grades.
+        Reset graph restores the current graph's original card positions and selection, then fits the view. Scope and settings stay unchanged.
+        Settings control node limits, recursive class subgraphs, depth, card metrics, and legends. Recursive mode follows dependencies and dependents, visiting each type once. Settings last for this session.
+
         ANALYSIS LIMITS
         Restore the target solution before analyzing. Analysis uses Debug. Source metrics cover C#; the project graph also includes F#. Generated files are excluded.
         Local functions and lambdas have separate complexity and MI scores. Some constructs, such as top-level statements and expression-bodied properties, have no separate function entry.

@@ -18,6 +18,8 @@ public sealed partial class MainWindow : Window
     private Dictionary<string, DependencyCycle> projectCycles = [];
     private Regex? searchPattern = new("", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
     private bool searchTimedOut;
+    private bool restoringGraphDefaults;
+    private string? classFocus;
 
     public MainWindow() : this(new SolutionAnalyzer()) { }
 
@@ -42,7 +44,7 @@ public sealed partial class MainWindow : Window
             if(refreshing || TypeList.SelectedItem is not TypeRow type) return;
             ShowType(type.Id);
             BuildClassGraph(type.Id);
-            Views.SelectedIndex = 1;
+            if(Views.SelectedItem != Class3DTab) Views.SelectedIndex = 1;
         };
         MethodList.SelectionChanged += (_, _) =>
         {
@@ -53,8 +55,20 @@ public sealed partial class MainWindow : Window
         ProjectGraph.NodeSelected += ShowProject;
         TypeGraph.NodeSelected += ShowType;
         TypeGraph.NodeOpened += BuildClassGraph;
-        FitProjects.Click += (_, _) => ProjectGraph.Fit();
-        FitTypes.Click += (_, _) => TypeGraph.Fit();
+        TypeGraph3D.NodeSelected += ShowType;
+        TypeGraph3D.NodeOpened += BuildClassGraph;
+        FitProjects.Click += (_, _) => ProjectGraph.Reset();
+        FitTypes.Click += (_, _) => TypeGraph.Reset();
+        FitTypes3D.Click += (_, _) => TypeGraph3D.Reset();
+        Recursive3D.IsCheckedChanged += (_, _) => Refresh3DGraph();
+        MaximumDepth3D.ValueChanged += (_, _) => Refresh3DGraph();
+        SettingsButton.Click += (_, _) => Views.SelectedItem = SettingsTab;
+        MaximumGraphNodes.ValueChanged += (_, _) => ApplyGraphSettings();
+        MaximumGraphDepth.ValueChanged += (_, _) => ApplyGraphSettings();
+        RecursiveSubgraphs.IsCheckedChanged += (_, _) => ApplyGraphSettings();
+        ShowGraphMetrics.IsCheckedChanged += (_, _) => ApplyGraphSettings();
+        ShowGraphLegend.IsCheckedChanged += (_, _) => ApplyGraphSettings();
+        RestoreGraphDefaults.Click += (_, _) => RestoreDefaultGraphSettings();
         Closed += (_, _) => { closed = true; analysisCancellation?.Cancel(); };
         var defaultSolution = Path.Combine(Environment.CurrentDirectory, "CodeAnalyzer.slnx");
         if(File.Exists(defaultSolution)) PathBox.Text = defaultSolution;
@@ -186,19 +200,7 @@ public sealed partial class MainWindow : Window
         TypesLabel.Text = $"Classes / types ({visibleTypes.Length})";
         RefreshMethods();
 
-        var projectEdges = snapshot.ProjectDependencies.Where(e => projects.Contains(e.SourceId) && projects.Contains(e.TargetId)).ToArray();
-        if(selectedProject is not null)
-        {
-            var neighbors = projectEdges.Where(e => e.SourceId == selectedProject || e.TargetId == selectedProject)
-                .SelectMany(e => new[] { e.SourceId, e.TargetId }).Append(selectedProject).ToHashSet();
-            projects.IntersectWith(neighbors);
-        }
-        ProjectGraph.SetGraph(snapshot.Projects.Where(p => projects.Contains(p.Id))
-            .Select(p => new GraphNode(p.Id, p.Name, p.Language + (p.IsTestProject ? " · tests" : ""))
-            {
-                Metrics = projectCycles.TryGetValue(p.Id, out var cycle) ? $"Dependency cycle: {cycle.NodeIds.Count} projects" : "Dependency cycle: none"
-            }).ToArray(),
-            projectEdges.Where(e => projects.Contains(e.SourceId) && projects.Contains(e.TargetId)).ToArray(), selectedProject);
+        BuildProjectGraph();
         BuildClassGraph((TypeList.SelectedItem as TypeRow)?.Id);
         StatusText.Text = $"{snapshot.Projects.Count} projects · {snapshot.Types.Count} C# types · {snapshot.Methods.Count} functions · "
             + $"{snapshot.Warnings.Count} analysis notes. Wheel: zoom · drag: move nodes / pan · double-click class: explore.";
@@ -235,23 +237,108 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private int MaximumNodes => (int)(MaximumGraphNodes.Value ?? 80);
+
+    private void ApplyGraphSettings()
+    {
+        if(restoringGraphDefaults) return;
+        MaximumGraphDepth.IsEnabled = RecursiveSubgraphs.IsChecked == true;
+        ProjectLegend.IsVisible = ClassLegend.IsVisible = ClassLegend3D.IsVisible = ShowGraphLegend.IsChecked == true;
+        ProjectGraph.ShowMetrics = TypeGraph.ShowMetrics = TypeGraph3D.ShowMetrics = ShowGraphMetrics.IsChecked == true;
+        if(snapshot is null) return;
+        BuildProjectGraph();
+        BuildClassGraph(classFocus ?? (TypeList.SelectedItem as TypeRow)?.Id);
+    }
+
+    private void RestoreDefaultGraphSettings()
+    {
+        restoringGraphDefaults = true;
+        try
+        {
+            MaximumGraphNodes.Value = 80;
+            MaximumGraphDepth.Value = 3;
+            RecursiveSubgraphs.IsChecked = false;
+            ShowGraphMetrics.IsChecked = true;
+            ShowGraphLegend.IsChecked = true;
+            Recursive3D.IsChecked = true;
+            MaximumDepth3D.Value = 3;
+        }
+        finally { restoringGraphDefaults = false; }
+        ApplyGraphSettings();
+    }
+
+    private void BuildProjectGraph()
+    {
+        if(snapshot is null) return;
+        var projects = VisibleProjects();
+        var selectedProject = (ProjectFilter.SelectedItem as ProjectChoice)?.Id;
+        var edges = snapshot.ProjectDependencies.Where(e => projects.Contains(e.SourceId) && projects.Contains(e.TargetId)).ToArray();
+        var selection = selectedProject is null
+            ? new GraphSelection(snapshot.Projects.Where(p => projects.Contains(p.Id))
+                .OrderBy(p => p.Name, StringComparer.Ordinal).ThenBy(p => p.Id, StringComparer.Ordinal)
+                .Take(MaximumNodes).Select(p => p.Id).ToArray(), projects.Count)
+            : GraphNeighborhood.Select(projects, edges, selectedProject, MaximumNodes);
+        var ids = selection.NodeIds.ToHashSet(StringComparer.Ordinal);
+        ProjectGraph.SetGraph(snapshot.Projects.Where(p => ids.Contains(p.Id))
+            .Select(p => new GraphNode(p.Id, p.Name, p.Language + (p.IsTestProject ? " · tests" : ""))
+            {
+                Metrics = projectCycles.TryGetValue(p.Id, out var cycle) ? $"Dependency cycle: {cycle.NodeIds.Count} projects" : "Dependency cycle: none"
+            }).ToArray(), edges.Where(e => ids.Contains(e.SourceId) && ids.Contains(e.TargetId)).ToArray(), selectedProject);
+        ProjectGraphLabel.Text = $"Showing {ids.Count} of {selection.TotalNodes} projects"
+            + (ids.Count < selection.TotalNodes ? " · node limit reached; change it in Settings" : "")
+            + " · arrows point to dependencies";
+    }
+
     private void BuildClassGraph(string? focus)
     {
         if(snapshot is null) return;
         var projects = VisibleProjects();
         var allowed = snapshot.Types.Where(t => projects.Contains(t.ProjectId)).Select(t => t.Id).ToHashSet();
         var edges = snapshot.TypeDependencies.Where(e => allowed.Contains(e.SourceId) && allowed.Contains(e.TargetId)).ToArray();
-        var neighbors = edges.Where(e => e.SourceId == focus || e.TargetId == focus)
-            .SelectMany(e => new[] { e.SourceId, e.TargetId }).Distinct().Where(id => id != focus).OrderBy(id => id).ToArray();
-        var ids = focus is null ? [] : neighbors.Take(79).Append(focus).ToHashSet();
+        classFocus = focus is not null && allowed.Contains(focus) ? focus : null;
+        var selection = GraphNeighborhood.Select(allowed, edges, classFocus, MaximumNodes,
+            RecursiveSubgraphs.IsChecked == true, (int)(MaximumGraphDepth.Value ?? 3));
+        var ids = selection.NodeIds.ToHashSet(StringComparer.Ordinal);
         TypeGraph.SetGraph(snapshot.Types.Where(t => ids.Contains(t.Id)).Select(t => new GraphNode(t.Id, t.Name,
             snapshot.Projects.First(p => p.Id == t.ProjectId).Name, typeRows[t.Id].CyclomaticComplexity)
         {
             Metrics = typeRows[t.Id].MetricsLabel
-        }).ToArray(), edges.Where(e => ids.Contains(e.SourceId) && ids.Contains(e.TargetId)).ToArray(), focus);
-        ClassGraphLabel.Text = focus is not null && typeLookup.TryGetValue(focus, out var type)
-            ? $"{type.FullName} · {neighbors.Length} direct neighbors"
-                + (neighbors.Length > 79 ? " (showing 79; choose another class to explore further)" : "")
+        }).ToArray(), edges.Where(e => ids.Contains(e.SourceId) && ids.Contains(e.TargetId)).ToArray(), classFocus);
+        ClassGraphLabel.Text = classFocus is not null && typeLookup.TryGetValue(classFocus, out var type)
+            ? $"{type.FullName} · showing {ids.Count} of {selection.TotalNodes} types"
+                + (RecursiveSubgraphs.IsChecked == true ? $" · recursive, depth {MaximumGraphDepth.Value ?? 3}" : " · direct neighbors")
+                + (ids.Count < selection.TotalNodes ? " · node limit reached; change it in Settings" : "")
+            : "No matching classes. Adjust the scope or search.";
+        BuildClassGraph3D(allowed, edges);
+    }
+
+    private void Refresh3DGraph()
+    {
+        if(restoringGraphDefaults) return;
+        MaximumDepth3D.IsEnabled = Recursive3D.IsChecked == true;
+        if(snapshot is null) return;
+        var projects = VisibleProjects();
+        var allowed = snapshot.Types.Where(t => projects.Contains(t.ProjectId)).Select(t => t.Id).ToHashSet();
+        BuildClassGraph3D(allowed, snapshot.TypeDependencies
+            .Where(e => allowed.Contains(e.SourceId) && allowed.Contains(e.TargetId)).ToArray());
+    }
+
+    private void BuildClassGraph3D(HashSet<string> allowed, IReadOnlyList<Dependency> edges)
+    {
+        if(snapshot is null) return;
+        MaximumDepth3D.IsEnabled = Recursive3D.IsChecked == true;
+        var selection = GraphNeighborhood.Select(allowed, edges, classFocus, MaximumNodes,
+            Recursive3D.IsChecked == true, (int)(MaximumDepth3D.Value ?? 3));
+        var ids = selection.NodeIds.ToHashSet(StringComparer.Ordinal);
+        var projectNames = snapshot.Projects.ToDictionary(p => p.Id, p => p.Name);
+        TypeGraph3D.SetGraph(snapshot.Types.Where(t => ids.Contains(t.Id)).Select(t => new GraphNode(t.Id, t.Name,
+            projectNames[t.ProjectId], typeRows[t.Id].CyclomaticComplexity, typeRows[t.Id].MetricsLabel)).ToArray(),
+            edges.Where(e => ids.Contains(e.SourceId) && ids.Contains(e.TargetId)).ToArray(), classFocus);
+        ClassGraph3DLabel.Text = classFocus is not null && typeLookup.TryGetValue(classFocus, out var type)
+            ? $"{type.FullName} · showing {ids.Count} of {selection.TotalNodes} types"
+                + (Recursive3D.IsChecked == true ? $" · recursive, depth {MaximumDepth3D.Value ?? 3}" : " · direct neighbors")
+                + " · follows dependencies and dependents; cycles visited once"
+                + (ids.Count < selection.TotalNodes ? " · node limit reached; change it in Settings" : "")
             : "No matching classes. Adjust the scope or search.";
     }
 

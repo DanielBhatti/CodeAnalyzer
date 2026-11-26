@@ -247,7 +247,7 @@ public sealed class UiTests
     {
         var window = new MainWindow();
         window.Show();
-        Assert.That(window.FindControl<TabControl>("Views")!.ItemCount, Is.EqualTo(4));
+        Assert.That(window.FindControl<TabControl>("Views")!.ItemCount, Is.EqualTo(6));
         Assert.That(window.FindControl<Button>("AnalyzeButton")!.IsEnabled, Is.True);
         Assert.That(window.FindControl<GraphView>("ProjectGraph"), Is.Not.Null);
         window.Close();

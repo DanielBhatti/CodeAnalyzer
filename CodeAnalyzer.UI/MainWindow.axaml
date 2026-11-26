@@ -2,13 +2,14 @@
         xmlns:local="using:CodeAnalyzer.UI" xmlns:analysis="using:CodeAnalyzer" x:Class="CodeAnalyzer.UI.MainWindow"
         Title="Code Analyzer" Width="1440" Height="940" MinWidth="1000" MinHeight="700">
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20" RowSpacing="12">
-    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
       <StackPanel>
         <TextBlock Text="Code Analyzer" FontSize="26" FontWeight="SemiBold" />
         <TextBlock Text="Explore structure, coupling, and complexity" Classes="caption" />
       </StackPanel>
       <Button x:Name="OpenButton" Grid.Column="1" Content="Open solution…" VerticalAlignment="Center" />
       <Button x:Name="CancelButton" Grid.Column="2" Content="Cancel" IsEnabled="False" VerticalAlignment="Center" />
+      <Button x:Name="SettingsButton" Grid.Column="3" Content="Settings" VerticalAlignment="Center" />
     </Grid>
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
       <TextBox x:Name="PathBox" PlaceholderText="Path to a .slnx, .sln, or project" />
@@ -48,21 +49,23 @@
       <Grid Grid.Column="2" RowDefinitions="*,10,230">
         <TabControl x:Name="Views">
           <TabItem Header="Project dependencies">
-            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
               <DockPanel>
-                <Button x:Name="FitProjects" Content="Fit graph" DockPanel.Dock="Right" />
-                <TextBlock Text="Arrows: project → referenced project · select a node for details" Classes="caption" VerticalAlignment="Center" />
+                <Button x:Name="FitProjects" Content="Reset graph" DockPanel.Dock="Right" ToolTip.Tip="Restore the original layout, selection, and zoom for this graph" />
+                <TextBlock x:Name="ProjectGraphLabel" Text="Arrows: project → referenced project · select a node for details" Classes="caption" VerticalAlignment="Center" TextWrapping="Wrap" />
               </DockPanel>
               <local:GraphView x:Name="ProjectGraph" Grid.Row="1" />
+              <local:GraphLegend x:Name="ProjectLegend" Grid.Row="2" />
             </Grid>
           </TabItem>
           <TabItem Header="Class dependencies">
-            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
               <DockPanel>
-                <Button x:Name="FitTypes" Content="Fit graph" DockPanel.Dock="Right" />
+                <Button x:Name="FitTypes" Content="Reset graph" DockPanel.Dock="Right" ToolTip.Tip="Restore the original layout, selection, and zoom for this graph" />
                 <TextBlock x:Name="ClassGraphLabel" Text="Select a class to explore its direct dependencies and dependents" Classes="caption" TextWrapping="Wrap" />
               </DockPanel>
               <local:GraphView x:Name="TypeGraph" Grid.Row="1" />
+              <local:GraphLegend x:Name="ClassLegend" Grid.Row="2" />
             </Grid>
           </TabItem>
           <TabItem Header="Method complexity">
@@ -100,6 +103,57 @@
           <TabItem Header="Definitions">
             <TextBox x:Name="WarningsBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                      Text="Open a solution to begin. Analysis uses the Debug configuration. Restore the target solution first." />
+          </TabItem>
+          <TabItem x:Name="SettingsTab" Header="Settings">
+            <ScrollViewer>
+              <StackPanel Margin="12" Spacing="14" MaxWidth="660" HorizontalAlignment="Left">
+                <TextBlock Text="Graph settings" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="Changes apply immediately for this session. Your source code is not changed." Classes="caption" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                  <StackPanel VerticalAlignment="Center" Spacing="4">
+                    <TextBlock Text="Maximum nodes" FontWeight="SemiBold" />
+                    <TextBlock Text="Limit each graph to 1–1,000 nodes. The focused node is always included." Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <NumericUpDown x:Name="MaximumGraphNodes" Grid.Column="1" Minimum="1" Maximum="1000" Value="80" Increment="1" FormatString="0" Width="120" />
+                </Grid>
+                <StackPanel Spacing="4">
+                  <CheckBox x:Name="RecursiveSubgraphs" Content="Expand 2D class subgraphs recursively" IsChecked="False" />
+                  <TextBlock Text="Follow dependencies and dependents beyond the focused class's immediate neighbors. Cycles are visited once; the node limit still applies." Classes="caption" TextWrapping="Wrap" />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                  <StackPanel VerticalAlignment="Center" Spacing="4">
+                    <TextBlock Text="Maximum depth" FontWeight="SemiBold" />
+                    <TextBlock Text="Number of connections to follow from the focused class (1–20)." Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <NumericUpDown x:Name="MaximumGraphDepth" Grid.Column="1" Minimum="1" Maximum="20" Value="3" Increment="1" FormatString="0" Width="120" IsEnabled="False" />
+                </Grid>
+                <CheckBox x:Name="ShowGraphMetrics" Content="Show metrics on graph nodes" IsChecked="True" />
+                <CheckBox x:Name="ShowGraphLegend" Content="Show graph legend" IsChecked="True" />
+                <Button x:Name="RestoreGraphDefaults" Content="Restore defaults" HorizontalAlignment="Left" />
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem x:Name="Class3DTab" Header="Class relationships 3D">
+            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+              <WrapPanel Orientation="Horizontal">
+                <CheckBox x:Name="Recursive3D" Content="Recursive relationships" IsChecked="True" VerticalAlignment="Center" />
+                <TextBlock Text="Maximum depth" Classes="caption" VerticalAlignment="Center" Margin="12,0" />
+                <NumericUpDown x:Name="MaximumDepth3D" Minimum="1" Maximum="20" Value="3" Increment="1" FormatString="0" Width="90" />
+                <Button x:Name="FitTypes3D" Content="Reset graph" Margin="12,0" ToolTip.Tip="Restore the original 3D camera and selection" />
+              </WrapPanel>
+              <StackPanel Grid.Row="1" Spacing="4">
+                <TextBlock x:Name="ClassGraph3DLabel" Text="Select a class to explore recursive relationships" Classes="caption" TextWrapping="Wrap" />
+                <TextBlock Text="Drag background: rotate · right-drag or Shift-drag: pan · wheel: zoom · click: inspect · double-click: refocus" Classes="caption" TextWrapping="Wrap" />
+              </StackPanel>
+              <local:Graph3DView x:Name="TypeGraph3D" Grid.Row="2" />
+              <Border x:Name="ClassLegend3D" Grid.Row="3" Background="#182232" CornerRadius="6" Padding="10,8">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Arrows point to dependencies. Purple: inheritance / interfaces. Gray: usage. Gold outline and lines: selection." FontSize="11" TextWrapping="Wrap" />
+                  <TextBlock Text="Node color = highest cyclomatic score: teal ≤ 10, gold 11–20, red &gt; 20. Colors are review cues, not grades." FontSize="11" TextWrapping="Wrap" />
+                  <TextBlock Text="Distance from the center shows relationship depth; rotation reveals the third dimension. Hover for metrics." FontSize="11" TextWrapping="Wrap" Classes="caption" />
+                </StackPanel>
+              </Border>
+            </Grid>
           </TabItem>
         </TabControl>
         <GridSplitter Grid.Row="1" ResizeDirection="Rows" HorizontalAlignment="Stretch" />
